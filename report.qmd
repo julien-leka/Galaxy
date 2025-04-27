@@ -1,0 +1,859 @@
+---
+title: Unicef Quarto Report
+author: Julien Leka
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-title: Contents
+    toc-depth: 2
+    toc-expand: true
+    toc-float: true
+    toc-collapsible: true
+    number-sections: true
+    page-layout: full
+    theme: cosmo
+    smooth-scroll: true
+    embed-resources: true
+    code-fold: true
+editor: visual
+jupyter: python3
+---
+
+<p align="center"> <img src="/content/drive/MyDrive/UNICEF/Pictures/150.png" alt="UNICEF Logo" width="300"/> </p>
+<h1 align="center" style="background-color:#4BA3F2; color:white; font-size:36px; padding:15px; border-radius:10px;">From Deprivation to Unemployment – A Child’s Journey</h1>
+<table align="center"> <tr> <td width="30%"> <img src="/content/drive/MyDrive/UNICEF/Pictures/childhood Deprivation.jpg" alt="Child Deprivation" width="100%"/> </td> <td width="40%" align="center"> <p><b><u><i>MISSION:</i></u></b></p> <p><i><span style="color:#4BA3F2;">UNICEF</span>, the United Nations agency for children, works to protect the rights of every child, especially the most disadvantaged and those hardest to reach. Across more than 190 countries and territories, we do whatever it takes to help children survive, thrive and fulfil their potential.</i></p> <img src="/content/drive/MyDrive/UNICEF/Pictures/arrow.jpg" alt="Arrow" width="80%"/> <p><b><u><i>VISION:</i></u></b></p> <p><i>All children have a right to survive, thrive and fulfill their potential – to the benefit of a better world.</i></p> </td> <td width="30%"> <img src="/content/drive/MyDrive/UNICEF/Pictures/happy_children.jpeg" alt="Happy Children" width="100%"/> </td> </tr> </table>
+
+
+
+
+
+
+# Introduction
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px;">
+<p>This dashboard examines how early-life deprivation impacts a child's future, specifically their ability to find employment as teenagers. It visualizes the relationship between the <b>percentage of children suffering from at least five deprivations</b> and the <b>youth unemployment rate (ages 15–19)</b> across countries. By combining this with economic and social indicators—like <b>GDP per capita, life expectancy, literacy rate, and access to sanitation</b>—the dashboard explores how national conditions shape childhood outcomes and labor market prospects. The story highlights how deprivation isn't just a temporary condition—it can have long-term consequences that echo into adolescence and adulthood.</p> </div>
+
+# World Map of Deprivation
+
+## Data Visual
+
+```{python}
+import pandas as pd
+import plotly.express as px
+
+deprivation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_1.csv")
+metadata = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_metadata.csv")
+
+deprivation_total = deprivation[
+    (deprivation["sex"] == "Total") &
+    (deprivation["indicator"].str.contains("five deprivation", case=False))
+]
+latest_deprivation = deprivation_total.sort_values("time_period", ascending=False).drop_duplicates("country")
+latest_deprivation = latest_deprivation[["country", "obs_value", "time_period"]]
+latest_deprivation = latest_deprivation.rename(columns={"obs_value": "deprivation_pct"})
+
+metadata.columns = metadata.columns.str.strip().str.lower()
+
+metadata_clean = metadata.rename(columns={
+    'population, total': 'population',
+    'gdp per capita (constant 2015 us$)': 'gdp_per_capita',
+    'gdp growth (annual %)': 'gdp_growth',
+    'life expectancy at birth, total (years)': 'life_expectancy'
+})
+
+avg_stats = metadata_clean.groupby("country")[["population", "gdp_per_capita", "gdp_growth", "life_expectancy"]].mean().reset_index()
+avg_stats = avg_stats.round({
+    "population": 0,
+    "gdp_per_capita": 2,
+    "gdp_growth": 2,
+    "life_expectancy": 2
+})
+
+deprivation_enriched = latest_deprivation.merge(avg_stats, how="left", on="country")
+
+def safe_format(val, fmt, fallback="N/A"):
+    try:
+        return fmt.format(val)
+    except:
+        return fallback
+
+def format_hover(row):
+    return (
+        f"<b>{row['country']}</b><br>"
+        f"Deprivation: {safe_format(row['deprivation_pct'], '{:.2f}')}%<br>"
+        f"Year: {row['time_period']}<br><br>"
+        f"<b>Avg Population:</b> {safe_format(row['population'], '{:,.0f}')}<br>"
+        f"<b>Avg GDP per Capita:</b> ${safe_format(row['gdp_per_capita'], '{:,.2f}')}<br>"
+        f"<b>Avg GDP Growth:</b> {safe_format(row['gdp_growth'], '{:.2f}')}%<br>"
+        f"<b>Avg Life Expectancy:</b> {safe_format(row['life_expectancy'], '{:.2f}')} yrs"
+    )
+
+deprivation_enriched["hover_text"] = deprivation_enriched.apply(format_hover, axis=1)
+
+fig = px.choropleth(
+    deprivation_enriched,
+    locations="country",
+    locationmode="country names",
+    color="deprivation_pct",
+    hover_name="country",
+    hover_data={"hover_text": True},
+    color_continuous_scale=[
+        "#fef0d9", "#fdd49e", "#fdbb84", "#fc8d59", "#ef6548",
+        "#d7301f", "#b30000", "#7f0000"
+    ],
+    range_color=(0, deprivation_enriched["deprivation_pct"].max()),
+    title="Percentage of Children Suffering at Least 5 Deprivations Across Countries"
+)
+
+fig.update_traces(hovertemplate='%{customdata[0]}<extra></extra>')
+
+fig.update_geos(
+    showcoastlines=True,
+    showcountries=True,
+    showland=True,
+    landcolor="rgb(240, 240, 240)",
+    projection_type="natural earth"
+)
+
+fig.update_layout(
+    margin={"r": 0, "t": 50, "l": 0, "b": 0},
+    geo=dict(bgcolor="rgba(0,0,0,0)"),
+    paper_bgcolor="white",
+    font=dict(family="Arial", size=14),
+    title_font_size=20,
+    coloraxis_colorbar=dict(
+        title="% Deprived",
+        ticksuffix="%",
+        titlefont=dict(size=14),
+    )
+)
+fig.write_html("/content/drive/MyDrive/UNICEF/Html files/deprivation_map.html", include_plotlyjs="cdn")
+```
+
+<div style="margin:1em 0">
+  <iframe src="/content/drive/MyDrive/UNICEF/Html files/deprivation_map.html" width="100%" height="500" frameBorder="10"></iframe>
+</div>
+
+## Analysis
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px; text-align:center;"> <p>This map illustrates the global distribution of children suffering from severe multidimensional poverty—defined as experiencing at least five deprivations. The highest rates are visibly concentrated in <b>Sub-Saharan Africa</b>, showing the darkest red shades, indicating the most severe levels of deprivation. Parts of <b>South and Southeast Asia</b> also report concerning rates.</p> <br> <p>These regions often align with lower <b>GDP per capita</b>, lower <b>access to sanitation</b>, and limited <b>educational or healthcare infrastructure</b>—a pattern supported by economic and social variables. Meanwhile, countries in <b>Eastern Europe, South America, and Central Asia</b> tend to show lower deprivation percentages, possibly reflecting more robust national investment in child-focused services.</p> <br> <p>This visualization highlights a clear <b>geographic inequality</b> in child well-being, underscoring the importance of targeted policy interventions and international support in the most affected regions.</p> </div>
+
+# How about GDP per capita and Life Expectancy to contrast the deprivation?
+
+## Data Visual
+
+```{python}
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import statsmodels.formula.api as smf
+
+deprivation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_1.csv")
+metadata = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_metadata.csv")
+
+metadata.columns = metadata.columns.str.strip().str.lower()
+
+valid_countries = set(deprivation["country"]).intersection(set(metadata["country"]))
+
+metadata_filtered = metadata[
+    (metadata["year"].between(1960, 2022)) &
+    (metadata["country"].isin(valid_countries))
+]
+
+metadata_selected = metadata_filtered[[
+    "country", "year",
+    "gdp per capita (constant 2015 us$)",
+    "life expectancy at birth, total (years)"
+]].rename(columns={
+    "gdp per capita (constant 2015 us$)": "gdp_per_capita",
+    "life expectancy at birth, total (years)": "life_expectancy"
+})
+
+deprivation_filtered = deprivation[
+    (deprivation["sex"] == "Total") &
+    (deprivation["indicator"] == "Percentage children suffering at least five deprivation. Homogeneous moderate standards")
+].sort_values("time_period", ascending=False).drop_duplicates("country")
+deprivation_filtered = deprivation_filtered[["country", "obs_value"]].rename(columns={"obs_value": "pct_deprived"})
+
+merged_df = pd.merge(metadata_selected, deprivation_filtered, on="country", how="inner").dropna()
+
+x1_range = [0, merged_df["gdp_per_capita"].max() * 1.1]
+x2_range = [0, merged_df["life_expectancy"].max() * 1.05]
+y_range = [0, merged_df["pct_deprived"].max() * 1.1]
+
+def fit_poly_ci(df, x_col, y_col):
+    df = df[[x_col, y_col]].dropna()
+    for d in range(2, 4):
+        df[f"x{d}"] = df[x_col] ** d
+    formula = f"{y_col} ~ {x_col} + x2 + x3"
+    model = smf.ols(formula, data=df).fit()
+    x_pred = np.linspace(df[x_col].min(), df[x_col].max(), 100)
+    pred_df = pd.DataFrame({x_col: x_pred, "x2": x_pred**2, "x3": x_pred**3})
+    pred = model.get_prediction(pred_df).summary_frame(alpha=0.05)
+    return x_pred, pred["mean"], pred["mean_ci_lower"], pred["mean_ci_upper"]
+
+init_year = 1960
+df_init = merged_df[merged_df["year"] == init_year]
+
+fig = make_subplots(rows=1, cols=2, shared_yaxes=True,
+                    subplot_titles=["GDP per Capita vs % Deprivation",
+                                    "Life Expectancy vs % Deprivation"])
+
+fig.add_trace(go.Scatter(
+    x=df_init["gdp_per_capita"], y=df_init["pct_deprived"],
+    mode="markers",
+    marker=dict(size=8, color=df_init["country"].astype("category").cat.codes, colorscale="Rainbow"),
+    text=df_init["country"], showlegend=False
+), row=1, col=1)
+
+fig.add_trace(go.Scatter(
+    x=df_init["life_expectancy"], y=df_init["pct_deprived"],
+    mode="markers",
+    marker=dict(size=8, color=df_init["country"].astype("category").cat.codes, colorscale="Rainbow"),
+    text=df_init["country"], showlegend=False
+), row=1, col=2)
+
+x1, y1, low1, up1 = fit_poly_ci(df_init, "gdp_per_capita", "pct_deprived")
+x2, y2, low2, up2 = fit_poly_ci(df_init, "life_expectancy", "pct_deprived")
+
+fig.add_trace(go.Scatter(x=x1, y=y1, mode="lines", line=dict(color="blue"), name="GDP Poly Fit"), row=1, col=1)
+fig.add_trace(go.Scatter(x=x1, y=low1, mode="lines", line=dict(width=0)), row=1, col=1)
+fig.add_trace(go.Scatter(x=x1, y=up1, mode="lines", fill="tonexty", fillcolor="rgba(0,0,255,0.1)", line=dict(width=0)), row=1, col=1)
+
+fig.add_trace(go.Scatter(x=x2, y=y2, mode="lines", line=dict(color="green"), name="Life Poly Fit"), row=1, col=2)
+fig.add_trace(go.Scatter(x=x2, y=low2, mode="lines", line=dict(width=0)), row=1, col=2)
+fig.add_trace(go.Scatter(x=x2, y=up2, mode="lines", fill="tonexty", fillcolor="rgba(0,128,0,0.1)", line=dict(width=0)), row=1, col=2)
+
+frames = []
+for yr in sorted(merged_df["year"].unique()):
+    df_yr = merged_df[merged_df["year"] == yr]
+    x1, y1, l1, u1 = fit_poly_ci(df_yr, "gdp_per_capita", "pct_deprived")
+    x2, y2, l2, u2 = fit_poly_ci(df_yr, "life_expectancy", "pct_deprived")
+
+    frames.append(go.Frame(data=[
+        go.Scatter(x=df_yr["gdp_per_capita"], y=df_yr["pct_deprived"],
+                   mode="markers", marker=dict(size=8, color=df_yr["country"].astype("category").cat.codes, colorscale="Rainbow"),
+                   text=df_yr["country"]),
+        go.Scatter(x=df_yr["life_expectancy"], y=df_yr["pct_deprived"],
+                   mode="markers", marker=dict(size=8, color=df_yr["country"].astype("category").cat.codes, colorscale="Rainbow"),
+                   text=df_yr["country"]),
+        go.Scatter(x=x1, y=y1, mode="lines", line=dict(color="blue")),
+        go.Scatter(x=x1, y=l1, mode="lines", line=dict(width=0)),
+        go.Scatter(x=x1, y=u1, fill="tonexty", mode="lines", line=dict(width=0), fillcolor="rgba(0,0,255,0.1)"),
+        go.Scatter(x=x2, y=y2, mode="lines", line=dict(color="green")),
+        go.Scatter(x=x2, y=l2, mode="lines", line=dict(width=0)),
+        go.Scatter(x=x2, y=u2, fill="tonexty", mode="lines", line=dict(width=0), fillcolor="rgba(0,128,0,0.1)")
+    ], name=str(yr)))
+
+fig.frames = frames
+
+fig.update_layout(
+    height=600, width=1000,
+    title="Animated: Deprivation vs GDP & Life Expectancy (3rd-Degree Regression)",
+    xaxis=dict(title="GDP per Capita (USD)", range=x1_range),
+    xaxis2=dict(title="Life Expectancy (Years)", range=x2_range),
+    yaxis=dict(title="% Children with ≥5 Deprivations", range=y_range),
+    updatemenus=[dict(
+        type="buttons", showactive=False, y=1.1, x=0.5, xanchor="center", yanchor="top",
+        buttons=[
+            dict(label="Play", method="animate",
+                 args=[None, {"frame": {"duration": 800, "redraw": True}, "fromcurrent": True}]),
+            dict(label="Pause", method="animate",
+                 args=[[None], {"frame": {"duration": 0}, "mode": "immediate"}])
+        ]
+    )],
+    sliders=[dict(
+        active=0,
+        steps=[dict(label=str(yr), method="animate", args=[[str(yr)], {"frame": {"duration": 800, "redraw": True}, "mode": "immediate"}])
+               for yr in sorted(merged_df["year"].unique())],
+        x=0.1, xanchor="left", y=0, yanchor="top"
+    )]
+)
+fig.write_html("/content/drive/MyDrive/UNICEF/Html files/deprivation_gdp_life.html", include_plotlyjs="cdn")
+```
+
+<div style="margin:1em 0">
+  <iframe src="/content/drive/MyDrive/UNICEF/Html files/deprivation_gdp_life.html" width="100%" height="100%" frameBorder="10"></iframe>
+</div>
+
+## Analysis
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px; text-align:center;"> <p>A clear <b>inverse correlation</b> is visible: countries with <b>higher GDP per capita</b> and <b>higher life expectancy</b> tend to have significantly <b>lower levels of child deprivation</b>. The <b>steep decline</b> of deprivation at around $4,000–$6,000 GDP per capita suggests a threshold effect—where economic growth begins to substantially reduce extreme poverty conditions for children.</p> <br>
+
+<p>Similarly, as <b>life expectancy rises above 60 years</b>, the deprivation rates tend to approach zero, highlighting the strong link between public health infrastructure and child well-being.</p> <br>
+
+<p>Some countries show positive movement—rising economically and improving child welfare—while others remain clustered in high-deprivation zones, signaling areas where more targeted policy and investment are urgently needed. </p> </div>
+
+# TOP 10 Countries affected vs Economic Stats
+
+## Data Visual
+
+```{python}
+import pandas as pd
+import plotly.express as px
+
+deprivation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_1.csv")
+metadata = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_metadata.csv")
+metadata.columns = metadata.columns.str.strip().str.lower()
+
+deprivation_filtered = deprivation[
+    (deprivation["sex"] == "Total") &
+    (deprivation["indicator"] == "Percentage children suffering at least five deprivation. Homogeneous moderate standards")
+][["country", "obs_value"]].rename(columns={"obs_value": "pct_deprived"})
+
+metadata_selected = metadata[[
+    "country",
+    "gdp per capita (constant 2015 us$)",
+    "life expectancy at birth, total (years)",
+    "inflation, consumer prices (annual %)"
+]].rename(columns={
+    "gdp per capita (constant 2015 us$)": "gdp_per_capita",
+    "life expectancy at birth, total (years)": "life_expectancy",
+    "inflation, consumer prices (annual %)": "inflation"
+})
+
+metadata_avg = metadata_selected.groupby("country").agg({
+    "gdp_per_capita": "mean",
+    "life_expectancy": "mean",
+    "inflation": "mean"
+}).reset_index()
+
+merged = pd.merge(deprivation_filtered, metadata_avg, on="country", how="left")
+
+top10 = merged.sort_values("pct_deprived", ascending=False).head(10)
+
+albania = merged[merged["country"] == "Albania"]
+top11 = pd.concat([top10, albania], ignore_index=True) if "Albania" not in top10["country"].values else top10.copy()
+
+top11_melted = top11.melt(
+    id_vars=["country"],
+    value_vars=["pct_deprived", "inflation", "gdp_per_capita", "life_expectancy"],
+    var_name="indicator",
+    value_name="value"
+)
+
+indicator_labels = {
+    "pct_deprived": "% Children w/ ≥5 Deprivations",
+    "inflation": "Average Inflation (%)",
+    "gdp_per_capita": "Average GDP per Capita",
+    "life_expectancy": "Average Life Expectancy"
+}
+top11_melted["indicator"] = top11_melted["indicator"].map(indicator_labels)
+
+ordered_countries = top11.sort_values("pct_deprived", ascending=False)["country"].tolist()
+top11_melted["country"] = pd.Categorical(top11_melted["country"], categories=ordered_countries[::-1], ordered=True)
+
+top11_melted["hover_text"] = (
+    "Country: " + top11_melted["country"].astype(str) +
+    "<br>Indicator: " + top11_melted["indicator"].astype(str) +
+    "<br>Value: " + top11_melted["value"].round(2).astype(str)
+)
+
+fig = px.bar(
+    top11_melted,
+    x="value",
+    y="country",
+    color="country",
+    facet_col="indicator",
+    orientation="h",
+    color_discrete_sequence=px.colors.qualitative.Bold,
+    custom_data=["hover_text"]
+)
+
+fig.update_traces(hovertemplate="%{customdata[0]}<extra></extra>")
+fig.update_layout(
+    height=700,
+    font=dict(size=12),
+    showlegend=False,
+    title="Top 10 Countries with Highest Child Deprivation + Albania Benchmark (Faceted)",
+    title_font_size=20,
+    margin=dict(t=80)
+)
+fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+fig.update_xaxes(matches=None)
+fig.write_html("/content/drive/MyDrive/UNICEF/Html files/top10_deprivation.html", include_plotlyjs="cdn")
+```
+
+<div style="margin:1em 0">
+  <iframe src="/content/drive/MyDrive/UNICEF/Html files/top10_deprivation.html" width="100%" height="100%" frameBorder="10"></iframe>
+</div>
+
+## Analysis
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px; text-align:center;">
+<p>Most countries in this list—<b>including Madagascar, Ethiopia, and Chad</b>—present a consistent pattern of <b>low GDP per capita and low life expectancy</b>, confirming the link between economic underdevelopment and severe child deprivation.</p> <br>
+
+<p>However, <b>Angola</b> and the <b>Democratic Republic of the Congo (DRC)</b> deviate from this pattern. Despite relatively high GDP per capita values, they still rank among the worst for child deprivation.  
+This suggests that <b>economic wealth alone is not enough</b>—inequality, governance, or resource distribution issues may prevent national wealth from translating into improved child outcomes.</p> <br>
+
+<p><b>Albania</b> is included for comparison: it shows <b>negligible deprivation</b>, yet has modest GDP and life expectancy levels.  
+Its presence highlights the role of <b>effective public policies and service delivery</b>, showing that economic strength is just one piece of the puzzle in reducing child poverty.</p> </div>
+
+# Deprivation vs. Sanitation and Stunting
+
+## Data Visual
+
+```{python}
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import statsmodels.api as sm
+
+deprivation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_1.csv")
+sanitation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/Access_to_sanitation_services_data.csv")
+stunting = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/Global_Expanded_Databases_Stunting.csv", encoding="latin1")
+
+deprivation.columns = deprivation.columns.str.strip().str.lower()
+sanitation.columns = sanitation.columns.str.strip().str.lower()
+stunting.columns = stunting.columns.str.strip().str.lower()
+
+sanitation["value"] = pd.to_numeric(sanitation["value"], errors="coerce")
+stunting["national"] = pd.to_numeric(stunting["national"], errors="coerce")
+
+sanitation_filtered = sanitation[sanitation["indicator_name"].str.contains("sanitation", case=False, na=False)]
+sanitation_avg = sanitation_filtered.groupby("country_name").agg({
+    "value": "mean"
+}).rename(columns={"value": "avg_sanitation"}).reset_index()
+sanitation_avg = sanitation_avg.rename(columns={"country_name": "country"})
+
+stunting = stunting.rename(columns={"countries and areas": "country", "national": "avg_stunting"})
+stunting_avg = stunting[["country", "avg_stunting"]].groupby("country").agg({"avg_stunting": "mean"}).reset_index()
+
+deprivation_filtered = deprivation[
+    (deprivation["sex"] == "Total") &
+    (deprivation["indicator"].str.contains("percentage children suffering at least five deprivation", case=False))
+][["country", "obs_value"]].rename(columns={"obs_value": "pct_deprived"})
+
+merged = deprivation_filtered.merge(sanitation_avg, on="country", how="inner").merge(stunting_avg, on="country", how="inner")
+
+merged["hover_sanitation"] = (
+    "Country: " + merged["country"] +
+    "<br>Sanitation Access: " + merged["avg_sanitation"].round(1).astype(str) + "%" +
+    "<br>Deprivation: " + merged["pct_deprived"].round(1).astype(str) + "%"
+)
+
+merged["hover_stunting"] = (
+    "Country: " + merged["country"] +
+    "<br>Stunting Rate: " + merged["avg_stunting"].round(1).astype(str) + "%" +
+    "<br>Deprivation: " + merged["pct_deprived"].round(1).astype(str) + "%"
+)
+
+fig = make_subplots(
+    rows=1, cols=2, shared_yaxes=True,
+    subplot_titles=[
+        "Access to Sanitation vs % Deprivation (Power Fit + 95% CI)",
+        "Stunting vs % Deprivation (2nd Degree Polynomial + 95% CI)"
+    ]
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=merged["avg_sanitation"],
+        y=merged["pct_deprived"],
+        mode="markers",
+        marker=dict(size=8, color="blue", opacity=0.7),
+        text=merged["hover_sanitation"],
+        hovertemplate="%{text}<extra></extra>",
+        name="Sanitation vs Deprivation"
+    ),
+    row=1, col=1
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=merged["avg_stunting"],
+        y=merged["pct_deprived"],
+        mode="markers",
+        marker=dict(size=8, color="green", opacity=0.7),
+        text=merged["hover_stunting"],
+        hovertemplate="%{text}<extra></extra>",
+        name="Stunting vs Deprivation"
+    ),
+    row=1, col=2
+)
+
+merged_nonzero = merged[(merged["avg_sanitation"] > 0) & (merged["pct_deprived"] > 0)]
+log_sanitation = np.log(merged_nonzero["avg_sanitation"])
+log_deprivation = np.log(merged_nonzero["pct_deprived"])
+power_model = sm.OLS(log_deprivation, sm.add_constant(log_sanitation)).fit()
+
+x_power = np.linspace(merged_nonzero["avg_sanitation"].min(), merged_nonzero["avg_sanitation"].max(), 100)
+X_power = sm.add_constant(np.log(x_power))
+predictions = power_model.get_prediction(X_power)
+pred_summary = predictions.summary_frame(alpha=0.05)
+
+y_power_fit = np.exp(pred_summary["mean"])
+y_power_ci_lower = np.exp(pred_summary["mean_ci_lower"])
+y_power_ci_upper = np.exp(pred_summary["mean_ci_upper"])
+
+fig.add_trace(
+    go.Scatter(
+        x=x_power,
+        y=y_power_fit,
+        mode="lines",
+        line=dict(color="darkblue"),
+        name="Power Regression"
+    ),
+    row=1, col=1
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=np.concatenate([x_power, x_power[::-1]]),
+        y=np.concatenate([y_power_ci_upper, y_power_ci_lower[::-1]]),
+        fill='toself',
+        fillcolor='rgba(30, 144, 255, 0.2)',
+        line=dict(color='rgba(255,255,255,0)'),
+        hoverinfo="skip",
+        showlegend=False
+    ),
+    row=1, col=1
+)
+
+coeffs = np.polyfit(merged["avg_stunting"], merged["pct_deprived"], deg=2)
+x_poly = np.linspace(merged["avg_stunting"].min(), merged["avg_stunting"].max(), 100)
+y_poly = np.polyval(coeffs, x_poly)
+
+y_pred = np.polyval(coeffs, merged["avg_stunting"])
+residuals = merged["pct_deprived"] - y_pred
+mse = np.mean(residuals**2)
+se = np.sqrt(mse)
+ci = 1.96 * se
+fig.add_trace(
+    go.Scatter(
+        x=x_poly,
+        y=y_poly,
+        mode="lines",
+        line=dict(color="darkgreen"),
+        name="2nd Degree Polynomial Fit"
+    ),
+    row=1, col=2
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=np.concatenate([x_poly, x_poly[::-1]]),
+        y=np.concatenate([y_poly + ci, (y_poly - ci)[::-1]]),
+        fill='toself',
+        fillcolor='rgba(50, 205, 50, 0.2)',
+        line=dict(color='rgba(255,255,255,0)'),
+        hoverinfo="skip",
+        showlegend=False
+    ),
+    row=1, col=2
+)
+
+fig.update_layout(
+    height=650,
+    width=1200,
+    title={
+        'text': "Correlation between Child Deprivation, Sanitation Access, and Stunting (with 95% Confidence Intervals)",
+        'y': 0.97,
+        'x': 0.5,
+        'xanchor': 'center',
+        'yanchor': 'top',
+        'font': dict(size=22)
+    },
+    margin=dict(l=60, r=60, t=120, b=60),
+    font=dict(size=12)
+)
+
+fig.for_each_annotation(lambda a: a.update(font_size=14, yshift=-30))
+
+fig.update_xaxes(title_text="Average Sanitation Access (%)", row=1, col=1)
+fig.update_xaxes(title_text="Average Stunting (%)", row=1, col=2)
+fig.update_yaxes(title_text="% Children with ≥5 Deprivations", row=1, col=1)
+fig.write_html("/content/drive/MyDrive/UNICEF/Html files/deprivation_sanitation_stunting.html", include_plotlyjs="cdn")
+```
+
+<div style="margin:1em 0">
+  <iframe src="/content/drive/MyDrive/UNICEF/Html files/deprivation_sanitation_stunting.html" width="100%" height="500" frameBorder="10"></iframe>
+</div>
+
+## Analysis
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px; text-align:center;">
+<p>This dual scatterplot explores how <b>basic living conditions</b> correlate with the <b>percentage of children suffering at least five deprivations</b>. </p> <br>
+
+<p>On the <b>left</b>, we see a <b>strong inverse relationship</b> between <b>access to sanitation</b> and child deprivation.  
+Countries with lower sanitation access (under 40%) tend to have much higher deprivation rates, while those with access above 70% see near-zero deprivation.  
+This confirms that investing in water and sanitation infrastructure has a direct impact on improving children’s well-being.</p><br>
+
+<p>On the <b>right</b>, the positive correlation with <b>national stunting rates</b> shows that malnutrition—especially chronic undernutrition—coexists closely with deprivation.  
+As stunting increases, so does the likelihood that children experience overlapping deprivations.</p> <br>
+
+<p>Together, these visuals reinforce the idea that <b>child deprivation is multidimensional</b> and often rooted in <b>basic service gaps</b> and <b>health-related inequalities</b>,  
+making sanitation and nutrition key policy levers to reduce long-term poverty.</p> </div>
+
+# Heatmap: Deprivation vs. Sanitation across the World
+
+## Data Visual
+
+```{python}
+import pandas as pd
+import plotly.express as px
+
+deprivation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_1.csv")
+sanitation = pd.read_csv("/content/drive/MyDrive/UNICEF/Csv Files/Access_to_sanitation_services_data.csv")
+
+deprivation.columns = deprivation.columns.str.strip().str.lower()
+sanitation.columns = sanitation.columns.str.strip().str.lower()
+
+sanitation["value"] = pd.to_numeric(sanitation["value"], errors="coerce")
+
+deprivation_filtered = deprivation[
+    (deprivation["sex"] == "Total") &
+    (deprivation["indicator"].str.contains("percentage children suffering at least five deprivation", case=False))
+][["country", "obs_value"]].rename(columns={"obs_value": "pct_deprived"})
+
+sanitation_filtered = sanitation[
+    sanitation["indicator_name"].str.contains("sanitation", case=False, na=False)
+]
+
+sanitation_avg = sanitation_filtered.groupby("country_name").agg({
+    "value": "mean"
+}).rename(columns={"value": "avg_sanitation"}).reset_index()
+sanitation_avg = sanitation_avg.rename(columns={"country_name": "country"})
+
+merged = deprivation_filtered.merge(sanitation_avg, on="country", how="inner")
+
+fig = px.scatter_geo(
+    merged,
+    locations="country",
+    locationmode="country names",
+    color="avg_sanitation",
+    size="pct_deprived",
+    hover_name="country",
+    hover_data={
+        "pct_deprived": True,
+        "avg_sanitation": True,
+    },
+    color_continuous_scale="Viridis",
+    size_max=30,
+    projection="natural earth",
+    title="Geographic Heatmap: Sanitation Access & Child Deprivation"
+)
+
+fig.update_traces(
+    hovertemplate="<b>%{hovertext}</b><br>" +
+    "Deprivation: %{customdata[0]:.1f}%<br>" +
+    "Sanitation Access: %{customdata[1]:.1f}%<extra></extra>"
+)
+
+fig.update_traces(text=None)
+
+fig.update_geos(
+    showcoastlines=True,
+    showcountries=True,
+    showland=True,
+    landcolor="rgb(240, 240, 240)",
+    fitbounds="locations"
+)
+
+fig.update_layout(
+    margin={"r":0,"t":50,"l":0,"b":0},
+    paper_bgcolor="white",
+    font=dict(family="Arial", size=12),
+    title_font_size=20,
+    coloraxis_colorbar=dict(
+        title="Sanitation Access (%)",
+        ticksuffix="%",
+        titlefont=dict(size=14),
+    ),
+    annotations=[
+        dict(
+            text="Circle Size = Deprivation Rate (%)",
+            x=1.02,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14),
+            xref="paper",
+            yref="paper",
+            xanchor="left",
+            yanchor="middle"
+        )
+    ]
+)
+fig.write_html("/content/drive/MyDrive/UNICEF/Html files/heatmap_deprivation_sanitation.html", include_plotlyjs="cdn")
+```
+
+<div style="margin:1em 0">
+  <iframe src="/content/drive/MyDrive/UNICEF/Html files/heatmap_deprivation_sanitation.html" width="100%" height="500" frameBorder="10"></iframe>
+</div>
+
+## Analysis
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px; text-align:center;">
+<p> This map illustrates the relationship between <b>access to sanitation</b> (color) and <b>child deprivation</b> (bubble size) across countries.  
+<b>Darker blue tones</b> represent higher sanitation coverage, while <b>lighter green shades</b> indicate lower access.  
+The <b>bubble size</b> reflects the percentage of children suffering at least five deprivations. </p> <br>
+
+<p> A striking regional trend appears in <b>Sub-Saharan Africa</b>, where countries with <b>poor sanitation coverage</b> also show <b>larger deprivation bubbles</b>—confirming that lack of access to basic services correlates strongly with multidimensional child poverty.  
+Countries in <b>South and Central Asia</b> and parts of <b>Latin America</b> also display moderate deprivation, though with relatively better sanitation coverage. </p> <br>
+
+<p>This visualization makes clear that <b>investing in water and sanitation infrastructure</b> is not only a health issue—it’s a powerful tool in reducing severe child deprivation and improving long-term development outcomes.</p> </div>
+
+# Deprivation and Child Unemployment, Coincidence or Correlation?
+
+## Data Visual
+
+```{python}
+!pip install plotly scikit-learn statsmodels --quiet
+
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
+
+indicator_1 = pd.read_csv('/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_1.csv')
+indicator_2 = pd.read_csv('/content/drive/MyDrive/UNICEF/Csv Files/unicef_indicator_2.csv')
+
+indicator_1.columns = indicator_1.columns.str.lower()
+indicator_2.columns = indicator_2.columns.str.lower()
+
+deprivation = indicator_1.groupby('country', as_index=False)['obs_value'].mean()
+deprivation = deprivation.rename(columns={'obs_value': 'deprivation_pct'})
+unemployment = indicator_2.groupby('country', as_index=False)['obs_value'].mean()
+unemployment = unemployment.rename(columns={'obs_value': 'adolescent_unemployment_pct'})
+
+merged = pd.merge(deprivation, unemployment, on='country')
+merged = merged.dropna()
+
+X = merged['deprivation_pct'].values.reshape(-1, 1)
+y = merged['adolescent_unemployment_pct'].values
+
+poly = PolynomialFeatures(degree=2)
+X_poly = poly.fit_transform(X)
+
+model = LinearRegression()
+model.fit(X_poly, y)
+
+x_range = np.linspace(X.min(), X.max(), 300).reshape(-1, 1)
+x_range_poly = poly.transform(x_range)
+y_pred = model.predict(x_range_poly)
+
+X2 = sm.add_constant(X_poly)
+est = sm.OLS(y, X2).fit()
+r2 = est.rsquared
+p_value = est.f_pvalue
+
+a = model.coef_[2]
+b = model.coef_[1]
+c = model.intercept_
+equation = f"y = {a:.2f}x² + {b:.2f}x + {c:.2f}"
+
+fig = go.Figure()
+
+fig.add_trace(go.Scatter(
+    x=merged['deprivation_pct'],
+    y=merged['adolescent_unemployment_pct'],
+    mode='markers',
+    marker=dict(size=8, color=np.random.randn(len(merged)), colorscale='Rainbow', opacity=0.8),
+    hovertemplate='<b>%{text}</b><br>Deprivation: %{x:.1f}%<br>Adolescent Unemployment: %{y:.1f}%<extra></extra>',
+    text=merged['country']
+))
+
+fig.add_trace(go.Scatter(
+    x=x_range.flatten(),
+    y=y_pred,
+    mode='lines',
+    line=dict(color='darkred', width=3),
+    name='Polynomial Fit (2nd Degree)',
+    hovertemplate=(
+        "<b>Regression Model</b><br>"
+        f"Equation: {equation}<br>"
+        f"R² = {r2:.3f}<br>"
+        f"P-value = {p_value:.3e}<extra></extra>"
+    )
+))
+
+predictions = est.get_prediction(sm.add_constant(poly.transform(x_range)))
+conf_int = predictions.conf_int(alpha=0.05)
+lower_bound = conf_int[:, 0]
+upper_bound = conf_int[:, 1]
+
+fig.add_traces([
+    go.Scatter(
+        x=x_range.flatten(),
+        y=lower_bound,
+        line=dict(color='lightcoral', width=0),
+        showlegend=False,
+        hoverinfo='skip'
+    ),
+    go.Scatter(
+        x=x_range.flatten(),
+        y=upper_bound,
+        fill='tonexty',
+        line=dict(color='lightcoral', width=0),
+        fillcolor='rgba(255, 160, 160, 0.4)',
+        showlegend=False,
+        hoverinfo='skip'
+    )
+])
+
+fig.update_layout(
+    title="Correlation Between Child Deprivation and Adolescent Unemployment (Average of all entries)",
+    xaxis_title="% Children with ≥5 Deprivations",
+    yaxis_title="% Adolescents Unemployed",
+    font=dict(family="Arial", size=16),
+    plot_bgcolor='white',
+    hovermode="closest",
+    margin=dict(l=50, r=50, t=80, b=50)
+)
+fig.write_html("/content/drive/MyDrive/UNICEF/Html files/deprivation_unemployment.html", include_plotlyjs="cdn")
+```
+
+<div style="margin:1em 0">
+  <iframe src="/content/drive/MyDrive/UNICEF/Html files/deprivation_unemployment.html" width="100%" height="500" frameBorder="10"></iframe>
+</div>
+
+## Analysis
+
+<div style="background-color:#4BA3F2; color:white; padding:20px; border-radius:10px; font-size:18px; text-align:center;"> <p>The trend shows a clear pattern:
+As <b>child deprivation increases</b>, so does the <b>likelihood of adolescent unemployment</b>.  In countries where over 1% of children face five or more deprivations, youth unemployment often exceeds <b>30%</b>, sometimes even reaching <b>70%</b>.</p> <br>
+
+<p>The message is clear — <b>early-life hardship can carry lasting effects</b>, limiting young people’s chances of securing work later in life.  
+Investing in children’s well-being today is essential for building a stronger, more inclusive workforce tomorrow.</p> </div>
+
+
+# Conclusion
+
+## 🌍 Final Message: Breaking the Cycle Starts with Us
+
+<div style="font-size: 22px;">
+
+This dashboard has revealed the <b>powerful links between early childhood deprivation and long-term life outcomes</b>.  
+From access to basic services like sanitation and education to broader national factors like GDP, life expectancy, and inflation — <b>the conditions children grow up in shape their future opportunities</b>.
+
+Countries with <b>higher deprivation</b> consistently face greater challenges in <b>youth employment, health, and development</b>.  
+But these outcomes are not inevitable — they are the result of <b>structural inequalities that can be addressed</b> through informed policy, targeted investment, and collective action.</div>
+
+## 💙 Support the Mission: Help Children Thrive
+
+<div style="font-size: 22px;">
+
+Every child deserves a fair start in life, free from poverty, hunger, and exclusion.  
+<b>UNICEF</b> works every day to break the cycle of deprivation by supporting education, healthcare, nutrition, and protection services for the most vulnerable children.
+
+✅ <b>Spread awareness.</b>  
+✅ <b>Support programs that invest in children.</b>  
+✅ <b>Be a voice for those who can't speak for themselves.</b></div>
+
+
+### _Because when children thrive, societies grow stronger, economies become fairer, and the future becomes brighter—for everyone._
+
+<div style="font-size: 22px;">
+
+<p align="center">
+  <a href="https://www.unicef.ie/donate/?utm_source=unicef.org.referral&utm_medium=donatelink&utm_content=donate&utm_campaign=unicef.org#1" target="_blank">
+    <img src="/content/drive/MyDrive/UNICEF/Pictures/images.jpeg" alt="Donate to UNICEF" width="300"/>
+  </a>
+</p>
+
+</div>
+
