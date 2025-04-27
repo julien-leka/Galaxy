@@ -16,7 +16,7 @@ jobs:
         uses: quarto-dev/quarto-actions/setup@v2
 
       - name: Render the website
-        run: quarto render
+        run: quarto render report.qmd
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
